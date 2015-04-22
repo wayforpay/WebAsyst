@@ -1,5 +1,5 @@
 Модуль WayForPay для WebAsyst Shop-Script
-=======
+----
 
 Установка
 ----
