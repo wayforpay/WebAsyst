@@ -3,11 +3,11 @@
 class wayforpayPayment extends waPayment implements waIPayment
 {
     private $url = 'https://secure.wayforpay.com/pay';
-    const TRANSACTION_APPROVED = 'Approved';
+    const WAYFORPAY_TRANSACTION_APPROVED = 'Approved';
 
-    const SIGNATURE_SEPARATOR = ';';
+    const WAYFORPAY_SIGNATURE_SEPARATOR = ';';
 
-    const ORDER_STATE_PAID = 'paid';
+    const WAYFORPAY_ORDER_STATE_PAID = 'paid';
 
     protected $keysForResponseSignature = array(
         'merchantAccount',
@@ -38,12 +38,13 @@ class wayforpayPayment extends waPayment implements waIPayment
         return array('UAH', 'RUB', 'USD', 'EUR');
     }
 
-    public function payment($payment_form_data, $order_data, $auto_submit = false)
+    public function payment($payment_form_data, $order_data, $auto_submit = FALSE)
     {
         $order = waOrder::factory($order_data);
         if (!in_array($order->currency, $this->allowedCurrency())) {
             throw new waPaymentException('Invalid currency');
         }
+
         $contact = new waContact(wa()->getUser()->getId());
         list($email) = $contact->get('email', 'value');
         list($phone) = $contact->get('phone', 'value');
@@ -71,12 +72,18 @@ class wayforpayPayment extends waPayment implements waIPayment
         $formFields['productCount'] = $productQty;
 
         $formFields['serviceUrl'] = $this->getRelayUrl() . '?transaction_result=result';
-        $formFields['returnUrl'] = wa()->getUrl(true) . wa()->getAppUrl('shop');
+        $formFields['returnUrl'] = $this->getAdapter()->getBackUrl();
 
         /**
          * Check phone
          */
-        $phone = str_replace(array('+', ' ', '(', ')', '-'), array('', '', '', '', ''), $phone);
+        $phone = str_replace(array('+', ' ', '(', ')', '-'), array(
+            '',
+            '',
+            '',
+            '',
+            ''
+        ), $phone);
         if (strlen($phone) == 10) {
             $phone = '38' . $phone;
         } elseif (strlen($phone) == 11) {
@@ -100,7 +107,15 @@ class wayforpayPayment extends waPayment implements waIPayment
         $view->assign('form_fields', $formFields);
         $view->assign('form_url', $this->getEndpointUrl());
         $view->assign('auto_submit', $auto_submit);
-        return $view->fetch($this->path . '/templates/payment.html');
+
+        if (!empty($_POST) && !empty($_POST['merchantSignature'])) {
+            return NULL;
+        } elseif (!empty($_POST) && !empty($_POST['reason'])) {
+            $view->assign('message', $_POST['reason']);
+            return $view->fetch($this->path . '/templates/payment_message.html');
+        } else {
+            return $view->fetch($this->path . '/templates/payment.html');
+        }
     }
 
     protected function callbackInit($request)
@@ -108,17 +123,22 @@ class wayforpayPayment extends waPayment implements waIPayment
         $request = $this->getRequest();
         $this->request = $request;
 
-        $order_id = !empty($request['orderReference']) ? $request['orderReference'] : null;
+        $order_id = !empty($request['orderReference']) ? $request['orderReference'] : NULL;
         $format = wa('shop')->getConfig()->getOrderFormat();
         $format = '/^' . str_replace('\{\$order\.id\}', '(\d+)', preg_quote($format, '/')) . '$/';
         if (preg_match($format, $order_id, $m)) {
             $order_id = $m[1];
         }
+
         $this->order_id = $order_id;
 
         return parent::callbackInit($request);
     }
 
+    public function capture()
+    {
+
+    }
 
     /**
      * @param array $request
@@ -128,46 +148,32 @@ class wayforpayPayment extends waPayment implements waIPayment
     public function callbackHandler($request)
     {
         $request = $this->getRequest();
-        $url = null;
+        $url = NULL;
 
-
-        $model = new shopOrderModel();
-        $order = $model->getOrder($this->order_id);
-
-        if (empty($order)) {
+        if (!intval($this->order_id)) {
             throw new waPaymentException('Invalid order id');
         }
 
         $sign = $this->getResponseSignature($request);
 
-        if (!empty($request["merchantSignature"]) && $request["merchantSignature"] != $sign) {
+        if (empty($request["merchantSignature"]) || $request["merchantSignature"] != $sign) {
             throw new waPaymentException('Invalid signature');
         }
 
-        if ($request['transactionStatus'] == self::TRANSACTION_APPROVED) {
-            $transactionData = $this->formalizeData($request);
+        if ($request['transactionStatus'] == self::WAYFORPAY_TRANSACTION_APPROVED) {
+            $transaction_data = $this->formalizeData($request);
             $transaction_data['state'] = self::STATE_CAPTURED;
             $transaction_data['type'] = self::OPERATION_AUTH_CAPTURE;
             $transaction_data['result'] = 1;
-            $this->saveTransaction($transaction_data, $request);
 
-            $model->updateByField('id', $this->order_id, array('state_id' => self::ORDER_STATE_PAID));
-            $modelLog = new shopOrderLogModel();
-            $modelLog->add(
-                array(
-                    'order_id' => $this->order_id,
-                    'action_id' => 'pay',
-                    'contact_id' => $order['contact_id'],
-                    'after_state_id' => self::ORDER_STATE_PAID,
-                    'before_state_id' => $order['state_id']
-                )
-            );
+            $this->saveTransaction($transaction_data, $request);
+            $this->execAppCallback(self::CALLBACK_CAPTURE, $transaction_data);
 
             echo $this->getAnswerToGateWay($request);
         }
 
         return array(
-            'template' => false
+            'template' => FALSE
         );
     }
 
@@ -177,11 +183,11 @@ class wayforpayPayment extends waPayment implements waIPayment
     protected function formalizeData($transaction_raw_data)
     {
         $transaction_data = parent::formalizeData($transaction_raw_data);
-        $transaction_data['native_id'] = $transaction_data['orderReference'];
-        $transaction_data['order_id'] = $this->order_id;
+        $transaction_data['native_id'] = '#1007';
+        $transaction_data['order_id'] = 1007;
         $transaction_data['amount'] = ifempty($transaction_raw_data['amount'], '');
-        $transaction_data['currency_id'] = $transaction_data['currency'];
-        $transaction_data['merchant_id'] = $transaction_data['merchantAccount'];
+        $transaction_data['currency_id'] = $transaction_raw_data['currency'];
+        $transaction_data['merchant_id'] = $this->merchant_account;
         return $transaction_data;
     }
 
@@ -211,7 +217,7 @@ class wayforpayPayment extends waPayment implements waIPayment
                 $hash [] = $option[$dataKey];
             }
         }
-        $hash = implode(self::SIGNATURE_SEPARATOR, $hash);
+        $hash = implode(self::WAYFORPAY_SIGNATURE_SEPARATOR, $hash);
 
         return hash_hmac('md5', $hash, $this->secret_key);
     }
@@ -252,7 +258,7 @@ class wayforpayPayment extends waPayment implements waIPayment
         foreach ($responseToGateway as $dataKey => $dataValue) {
             $sign [] = $dataValue;
         }
-        $sign = implode(self::SIGNATURE_SEPARATOR, $sign);
+        $sign = implode(self::WAYFORPAY_SIGNATURE_SEPARATOR, $sign);
         $sign = hash_hmac('md5', $sign, $this->secret_key);
         $responseToGateway['signature'] = $sign;
 
@@ -261,6 +267,6 @@ class wayforpayPayment extends waPayment implements waIPayment
 
     protected function getRequest()
     {
-        return json_decode(file_get_contents("php://input"), true);
+        return json_decode(file_get_contents("php://input"), TRUE);
     }
 }
