@@ -56,7 +56,7 @@ class wayforpayPayment extends waPayment implements waIPayment
         $formFields['merchantDomainName'] = $_SERVER['HTTP_HOST'];
         $formFields['merchantTransactionSecureType'] = 'AUTO';
         $formFields['currency'] = $order->currency;
-        $formFields['amount'] = round($order_data['total'], 2);
+        $formFields['amount'] =  str_replace(',', '.', round($order_data['total'], 2));
 
         $productNames = array();
         $productQty = array();
