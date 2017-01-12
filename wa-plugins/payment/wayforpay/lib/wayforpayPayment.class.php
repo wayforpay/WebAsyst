@@ -14,7 +14,7 @@ class wayforpayPayment extends waPayment implements waIPayment
      */
     const WAYFORPAY_ORDER_ID_PATTERN  = '/^(\w[\w\d]+)\<_\>([\w\d]+)\<_\>(.+)$/';
     /**
-     * @const string %app_id%_%merchant_id%_%order_id%
+     * @const string %app_id%<_>%merchant_id%<_>%order_id%
      */
     const WAYFORPAY_ORDER_ID_TEMPLATE = '%s<_>%s<_>%s';
 
