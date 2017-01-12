@@ -8,6 +8,15 @@ class wayforpayPayment extends waPayment implements waIPayment
     const WAYFORPAY_SIGNATURE_SEPARATOR = ';';
 
     const WAYFORPAY_ORDER_STATE_PAID = 'paid';
+    
+    /**
+     * @const strin patterrn order_id
+     */
+    const WAYFORPAY_ORDER_ID_PATTERN  = '/^(\w[\w\d]+)\<_\>([\w\d]+)\<_\>(.+)$/';
+    /**
+     * @const string %app_id%_%merchant_id%_%order_id%
+     */
+    const WAYFORPAY_ORDER_ID_TEMPLATE = '%s<_>%s<_>%s';
 
     protected $keysForResponseSignature = array(
         'merchantAccount',
@@ -48,9 +57,14 @@ class wayforpayPayment extends waPayment implements waIPayment
         $contact = new waContact(wa()->getUser()->getId());
         list($email) = $contact->get('email', 'value');
         list($phone) = $contact->get('phone', 'value');
-
+        
         $formFields['merchantAccount'] = $this->merchant_account;
-        $formFields['orderReference'] = shopHelper::encodeOrderId($order_data['order_id']);
+        $formFields['orderReference'] = sprintf(
+            static::WAYFORPAY_ORDER_ID_TEMPLATE,
+            $this->app_id,
+            $this->merchant_id,
+            shopHelper::encodeOrderId($order_data['order_id'])
+        );
         $formFields['orderDate'] = strtotime($order_data['datetime']);
         $formFields['merchantAuthType'] = 'simpleSignature';
         $formFields['merchantDomainName'] = $_SERVER['HTTP_HOST'];
@@ -124,6 +138,13 @@ class wayforpayPayment extends waPayment implements waIPayment
         $this->request = $request;
 
         $order_id = !empty($request['orderReference']) ? $request['orderReference'] : NULL;
+        $matches = array();
+        if (preg_match(static::WAYFORPAY_ORDER_ID_PATTERN, $order_id, $matches)) {
+            $this->app_id      = $matches[1];
+            $this->merchant_id = $matches[2];
+            $order_id          = $matches[3];
+        }
+        
         $format = wa('shop')->getConfig()->getOrderFormat();
         $format = '/^' . str_replace('\{\$order\.id\}', '(\d+)', preg_quote($format, '/')) . '$/';
         if (preg_match($format, $order_id, $m)) {
