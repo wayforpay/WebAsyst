@@ -77,7 +77,7 @@ class wayforpayPayment extends waPayment implements waIPayment
         $productPrices = array();
         foreach ($order_data['items'] as $item) {
             $productNames[] = $item['name'];
-            $productPrices[] = round($item['price'], 2);
+            $productPrices[] = round(str_replace(',', '.', $item['price']), 2);
             $productQty[] = $item['quantity'];
         }
 
